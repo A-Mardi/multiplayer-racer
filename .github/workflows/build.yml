@@ -7,31 +7,22 @@ on:
 permissions:
   contents: read
 jobs:
-  web:
+  beta:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: server/go.sum
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: npm ci
-      - run: npm run build
-  server:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: server
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: server/go.mod
-          cache: false
-      - run: test -z "$(gofmt -l .)"
-      - run: go vet ./...
-      - run: go build ./...
+      - run: go -C server test -race ./...
+      - run: go -C server vet ./...
+      - run: npm ci --prefix web
+      - run: npm run build --prefix web
+      - run: npx --prefix web playwright install --with-deps chromium
+      - run: npm test --prefix web

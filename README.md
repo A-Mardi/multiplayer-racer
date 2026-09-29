@@ -1,53 +1,56 @@
-# Multiplayer Racer
+# Circuit · multiplayer-racer
 
-A small browser racer built around responsive multiplayer.
+A browser time-trial racer with an authoritative Go simulation and immediate local controls.
 
 [![Build](https://github.com/A-Mardi/multiplayer-racer/actions/workflows/build.yml/badge.svg)](https://github.com/A-Mardi/multiplayer-racer/actions/workflows/build.yml)
 
-**Status: initial scaffold.** This repository contains a runnable frontend and language-specific starter code. The product features described in the roadmap are not implemented. There are no performance or adoption claims yet.
+**Working local beta · 0.1.0.** Go, React, and TypeScript.
 
-## Stack
+![Circuit beta](docs/images/beta-desktop.png)
 
-Go, React, TypeScript.
+## What works
 
-## Run the frontend
+- Shared rooms for up to eight drivers, keyboard/touch controls, checkpoints, and lap times.
+- A 30 Hz authoritative server; clients submit controls rather than positions.
+- Local prediction, acknowledgement-based reconciliation, and remote-car interpolation.
+- Reconnect tokens, measured ping, render diagnostics, and selectable added network delay.
 
-Requires Node.js 22.12+; CI uses Node.js 24. From the repository root:
+## Run
 
-```sh
-cd web
-npm ci
-npm run dev
-```
-
-Open http://127.0.0.1:5173. Each project uses the same development ports; run one project at a time or adjust `web/vite.config.js` and the service address.
-
-`npm run check` checks TypeScript. `npm run build` checks types and creates a production frontend build. `npm run preview` serves that static build; it does not include an API proxy or backend.
-
-## Run the service
-
-Install Go 1.26 or newer. In a second terminal, from the repository root:
+Requires Node.js 22.12+ and Go 1.26+. From the repository root:
 
 ```sh
-cd server
-go run ./cmd/server
+npm ci --prefix web
+npm run build --prefix web
+node scripts/start.mjs
 ```
 
-The service binds to http://127.0.0.1:8080 and only exposes `GET /api/health`. The frontend dev server proxies `/api` to it. The health button verifies that the starter service is running; it does not verify any planned product feature.
+Open http://127.0.0.1:8093. The launcher builds Go and serves the frontend from one origin. Set GO_BINARY if Go is not on PATH. You can pass `--addr`, `--web` to the launcher.
 
-Check the service with `go vet ./...` and `go build ./...` from `server/`.
+Open a room in two tabs. Drive with arrow keys or WASD, follow the track counterclockwise, and pass the checkpoint gates to record a lap. Open Network & performance to add 200 ms of round-trip delay, then reload to exercise reconnect.
 
-## Repository layout
+For frontend development, leave the service running and use `npm run dev --prefix web` at http://127.0.0.1:5179; Vite proxies the service routes.
 
-- `web/` — React + TypeScript frontend
-- `server/` — standard-library Go HTTP service
-- `docs/` — scope, component boundaries, and implementation milestones
-- `.github/workflows/build.yml` — frontend and language-specific build checks
+## Verify
 
-## Development
+```sh
+go -C server test ./...
+go -C server vet ./...
+npm run build --prefix web
+npx --prefix web playwright install chromium
+npm test --prefix web
+```
 
-Read [the roadmap](docs/ROADMAP.md), [architecture notes](docs/ARCHITECTURE.md), and [contribution guidance](CONTRIBUTING.md).
+Browser tests launch an isolated service and temporary data directory. CI additionally runs Go's race detector. Go tests check acceleration, steering, grass drag, and long-run finite bounded state. Playwright connects two drivers, drives, reloads without duplicating the seat, adds 200 ms of RTT, and checks mobile overflow. The eight-driver load result and its limits are recorded in [BENCHMARKS.md](docs/BENCHMARKS.md).
+
+## Beta boundaries
+
+One track with ghost cars: there are no car-to-car collisions, matchmaking, accounts, persistent leaderboards, or 3D rendering. Graphics use Canvas 2D, not Three.js. Rooms support eight drivers and the process caps rooms at 32; only the eight-client single-room case has been measured. Disconnected seats persist for 60 seconds. Reconnect tokens are stored in sessionStorage, so separate tabs get separate drivers. Rooms and results disappear on server restart. The default listener is local; public hosting needs access controls, rate limits, HTTPS, and operational testing.
+
+## Engineering notes
+
+[Architecture](docs/ARCHITECTURE.md) explains the boundaries and tradeoffs. [Roadmap](docs/ROADMAP.md) separates implemented features from future work. [Contributing](CONTRIBUTING.md) covers checks and reproducible reports.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE). Dependency licenses remain their own; see [third-party notices](THIRD_PARTY_NOTICES.md).

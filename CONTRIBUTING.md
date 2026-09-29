@@ -1,7 +1,7 @@
 # Contributing
 
-This project is at the scaffold stage. Start with the README and `docs/ROADMAP.md`. Keep changes focused on one useful behavior and update documentation when setup or scope changes.
+Start with the README setup and architecture notes. Keep the interface focused on the primary task and use the existing paper, ink, and sage palette.
 
-Run `npm ci` and `npm run build` in `web/`, plus the language-specific checks documented in the README. Add tests for product behavior and failure modes as features are implemented. Report performance results with a reproducible workload and machine details.
+Before a pull request, run Go tests and vet, the frontend build, and Playwright. Format Go with gofmt and frontend sources with `npm run format --prefix web`. Browser tests use isolated storage; do not point them at someone else's data directory.
 
-Do not commit credentials, personal documents, generated builds, or benchmark data containing private information.
+Bug reports should include steps, browser/OS, expected behavior, actual behavior, and sanitized logs. Do not attach private files or reconnect/download tokens. Performance changes need a reproducible workload, environment, and before/after measurements. Describe what was tested and keep limitations explicit.

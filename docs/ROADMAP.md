@@ -1,24 +1,16 @@
-# Roadmap
+# Circuit roadmap
 
-This is planned work, not a list of delivered features.
+## Shipped in the local beta
 
-## Foundation
+- Shared rooms for up to eight drivers, keyboard/touch controls, checkpoints, and lap times.
+- A 30 Hz authoritative server; clients submit controls rather than positions.
+- Local prediction, acknowledgement-based reconciliation, and remote-car interpolation.
+- Reconnect tokens, measured ping, render diagnostics, and selectable added network delay.
 
-- [x] Create a runnable React + TypeScript starter.
-- [x] Add language-specific starter code and build checks.
-- [x] Document setup, scope, and component boundaries.
+## Next, not implemented
 
-## First useful release
+- Automated Go/TypeScript model parity fixtures.
+- Jitter/loss tests and interpolation buffering.
+- Room lifecycle controls, spectators, and additional tracks.
 
-- [ ] Build one track and a playable fixed-step driving simulation.
-- [ ] Add rooms and an authoritative server.
-- [ ] Implement prediction, reconciliation, and interpolation.
-- [ ] Test reconnection and simulated latency with a diagnostic overlay.
-
-## Release evidence
-
-- [ ] Exercise the complete workflow on realistic inputs.
-- [ ] Add tests for core behavior and meaningful failure cases.
-- [ ] Publish reproducible benchmarks with hardware, inputs, and methodology.
-- [ ] Check keyboard use, empty states, progress, cancellation, and errors.
-- [ ] Record an accurate demo and update the README with implemented features.
+The README and tests describe current behavior. Roadmap items are not resume claims or capacity guarantees.

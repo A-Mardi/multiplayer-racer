@@ -11,6 +11,10 @@
 
 - Automated Go/TypeScript model parity fixtures.
 - Jitter/loss tests and interpolation buffering.
-- Room lifecycle controls, spectators, and additional tracks.
+- Room lifecycle controls and additional tracks.
 
 The README and tests describe current behavior. Roadmap items are not resume claims or capacity guarantees.
+
+## Added after the initial beta
+
+Live spectator mode, separate driver/spectator limits, shareable viewing links, and protocol tests that reject spectator control messages.

@@ -13,3 +13,7 @@ The server issues a random reconnect token. The same tab can reclaim its car for
 ## Network harness
 
 The UI adds half the selected round-trip delay to outbound input and inbound messages. Ping includes that delay. This reproduces latency, not packet loss or reordering. The load harness opens eight real WebSocket clients, sends 30 Hz inputs, steers them around the course, measures snapshot cadence and ping, and requires each client to receive over 25 updates/second and at least one driver to complete a valid lap.
+
+## Spectators
+
+A socket with spectate=1 is registered in a separate room connection set and receives a role-only welcome without a driver token. The server broadcasts the same bounded snapshots and spectator count to watchers. Spectators can ping but cannot submit controls or reset a car. Disconnection immediately releases the spectator slot; an empty room is removed only after both its driver and spectator sets are empty. The browser does not run local prediction or expose driving controls while spectating.

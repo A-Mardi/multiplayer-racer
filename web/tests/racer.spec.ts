@@ -34,3 +34,26 @@ test('two drivers share a room, drive, reconnect, and simulate latency', async (
   expect(errors).toEqual([]);
   await other.close();
 });
+
+test('spectator watches a room without a driver seat and can join as a driver', async ({
+  page,
+  browser,
+}) => {
+  const room = 'watch-' + crypto.randomUUID().slice(0, 8);
+  await page.goto('/#room=' + room);
+  const watcher = await browser.newPage();
+  await watcher.goto('/#room=' + room + '&watch=1');
+  await expect(watcher.getByText('Watching live', { exact: true })).toBeVisible();
+  await expect(watcher.locator('footer')).toContainText('1/8 drivers');
+  await expect(page.locator('footer')).toContainText('1 watching');
+  await expect(watcher.getByRole('button', { name: 'Reset car ↺' })).toHaveCount(0);
+  await expect(watcher.getByRole('table', { name: 'Drivers' }).locator('tbody tr')).toHaveCount(1);
+  await watcher.reload();
+  await expect(watcher.locator('footer')).toContainText('1/8 drivers');
+  await watcher.getByLabel('Room settings').click();
+  await watcher.getByLabel('Join as').selectOption('driver');
+  await watcher.getByRole('button', { name: 'Join room', exact: true }).click();
+  await expect(watcher.locator('footer')).toContainText('2/8 drivers');
+  await expect(watcher.getByRole('button', { name: 'Reset car ↺' })).toBeVisible();
+  await watcher.close();
+});

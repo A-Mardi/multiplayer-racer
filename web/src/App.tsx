@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { controls, step, onRoad, type Car, type Controls, type Driver } from './model';
 const raw = new URLSearchParams(location.hash.slice(1)).get('room');
 const room = raw && /^[\w-]{1,32}$/.test(raw) ? raw : 'lobby';
+const spectating = new URLSearchParams(location.hash.slice(1)).get('watch') === '1';
 const time = (seconds: number) => (seconds ? seconds.toFixed(2) + 's' : '—');
 export default function App() {
   const [name, setName] = useState(
@@ -9,6 +10,8 @@ export default function App() {
         sessionStorage.getItem('circuit-name') || 'Driver ' + Math.floor(Math.random() * 900 + 100),
     ),
     [roomInput, setRoomInput] = useState(room),
+    [joinMode, setJoinMode] = useState(spectating ? 'spectator' : 'driver'),
+    [spectators, setSpectators] = useState(0),
     [status, setStatus] = useState('Connecting'),
     [drivers, setDrivers] = useState<Driver[]>([]),
     [metrics, setMetrics] = useState({
@@ -21,7 +24,11 @@ export default function App() {
     }),
     [rtt, setRtt] = useState(0),
     [latency, setLatency] = useState(0),
-    [notice, setNotice] = useState('Arrow keys or WASD to drive.');
+    [notice, setNotice] = useState(
+      spectating
+        ? 'Watching live. Join as a driver from Room settings.'
+        : 'Arrow keys or WASD to drive.',
+    );
   const canvas = useRef<HTMLCanvasElement>(null),
     socket = useRef<WebSocket | null>(null),
     input = useRef(controls()),
@@ -68,7 +75,12 @@ export default function App() {
           '//' +
           location.host +
           '/ws?' +
-          new URLSearchParams({ room, name, token }),
+          new URLSearchParams({
+            room,
+            name,
+            token: spectating ? '' : token,
+            spectate: spectating ? '1' : '0',
+          }),
       );
       socket.current = ws;
       ws.onopen = () => {
@@ -81,9 +93,11 @@ export default function App() {
           try {
             const msg = JSON.parse(event.data);
             if (msg.type === 'welcome') {
-              own.current = msg.id;
-              sequence.current = Math.max(sequence.current, msg.seq);
-              sessionStorage.setItem('circuit-token-' + room, msg.token);
+              own.current = msg.role === 'spectator' ? '' : msg.id;
+              if (msg.role !== 'spectator') {
+                sequence.current = Math.max(sequence.current, msg.seq);
+                sessionStorage.setItem('circuit-token-' + room, msg.token);
+              }
               pending.current = [];
             }
             if (msg.type === 'pong') setRtt(Math.round(performance.now() - msg.time));
@@ -105,6 +119,7 @@ export default function App() {
               }
               if (performance.now() - lastUI > 200) {
                 setDrivers(msg.players);
+                setSpectators(msg.spectators || 0);
                 lastUI = performance.now();
               }
             }
@@ -136,6 +151,7 @@ export default function App() {
     }, 1000 / 30);
     const ping = setInterval(() => send({ type: 'ping', time: performance.now() }), 1000);
     const key = (e: KeyboardEvent) => {
+      if (spectating) return;
       if ((e.target as HTMLElement).matches('input,select,textarea')) return;
       const mapping: Record<string, keyof Controls> = {
         ArrowUp: 'up',
@@ -294,7 +310,7 @@ export default function App() {
       return;
     }
     sessionStorage.setItem('circuit-name', name.slice(0, 20) || 'Driver');
-    location.hash = 'room=' + roomInput;
+    location.hash = 'room=' + roomInput + (joinMode === 'spectator' ? '&watch=1' : '');
     location.reload();
   }
   const me = latest.current.find((p) => p.id === own.current);
@@ -309,12 +325,18 @@ export default function App() {
           <button
             onClick={() => {
               void navigator.clipboard
-                .writeText(location.origin + location.pathname + '#room=' + room)
+                .writeText(
+                  location.origin +
+                    location.pathname +
+                    '#room=' +
+                    room +
+                    (spectating ? '&watch=1' : ''),
+                )
                 .then(() => setNotice('Room link copied. Open it on another tab or browser.'))
                 .catch(() => setNotice('Copy the room URL from your address bar.'));
             }}
           >
-            Copy room link
+            {spectating ? 'Copy spectator link' : 'Copy room link'}
           </button>
           <details className="room-menu">
             <summary aria-label="Room settings">•••</summary>
@@ -344,89 +366,119 @@ export default function App() {
                   onChange={(e) => setRoomInput(e.target.value)}
                 />
               </label>
+              <label>
+                Join as
+                <select
+                  aria-label="Join as"
+                  value={joinMode}
+                  onChange={(e) => setJoinMode(e.target.value)}
+                >
+                  <option value="driver">Driver</option>
+                  <option value="spectator">Spectator</option>
+                </select>
+              </label>
               <button className="primary">Join room</button>
             </form>
           </details>
         </div>
       </header>
       <div className="race-hud">
-        <div>
-          <span className="muted small">Lap</span>
-          <strong>{metrics.lap}</strong>
-        </div>
-        <div>
-          <span className="muted small">Best</span>
-          <strong>{time(metrics.best)}</strong>
-        </div>
-        <div>
-          <span className="muted small">Speed</span>
-          <strong>
-            <output aria-label="Car speed">{metrics.speed}</output>
-            <small> px/s</small>
-          </strong>
-        </div>
-        <div className="checkpoint">
-          <span className="muted small">Checkpoints</span>
-          <span>
-            {[0, 1, 2, 3].map((i) => (
-              <i key={i} className={metrics.checkpoint > i ? 'passed' : ''} />
-            ))}
-          </span>
-        </div>
-        <button
-          onClick={() => {
-            input.current = controls();
-            pending.current = [];
-            socket.current?.send(JSON.stringify({ type: 'reset' }));
-          }}
-          disabled={status !== 'Connected'}
-        >
-          Reset car ↺
-        </button>
+        {spectating ? (
+          <div>
+            <span className="muted small">Spectator mode</span>
+            <strong>Watching live</strong>
+          </div>
+        ) : (
+          <>
+            <div>
+              <span className="muted small">Lap</span>
+              <strong>{metrics.lap}</strong>
+            </div>
+            <div>
+              <span className="muted small">Best</span>
+              <strong>{time(metrics.best)}</strong>
+            </div>
+            <div>
+              <span className="muted small">Speed</span>
+              <strong>
+                <output aria-label="Car speed">{metrics.speed}</output>
+                <small> px/s</small>
+              </strong>
+            </div>
+            <div className="checkpoint">
+              <span className="muted small">Checkpoints</span>
+              <span>
+                {[0, 1, 2, 3].map((i) => (
+                  <i key={i} className={metrics.checkpoint > i ? 'passed' : ''} />
+                ))}
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                input.current = controls();
+                pending.current = [];
+                socket.current?.send(JSON.stringify({ type: 'reset' }));
+              }}
+              disabled={status !== 'Connected'}
+            >
+              Reset car ↺
+            </button>
+          </>
+        )}
       </div>
       <main className="race-stage">
-        <canvas ref={canvas} aria-label="Multiplayer racetrack. Use arrow keys or WASD to drive." />
+        <canvas
+          ref={canvas}
+          aria-label={
+            spectating
+              ? 'Live multiplayer racetrack. Spectator view.'
+              : 'Multiplayer racetrack. Use arrow keys or WASD to drive.'
+          }
+        />
         {status !== 'Connected' && (
           <div className="connection-message" role="status">
             {status}
           </div>
         )}
       </main>
-      <div className="touch-controls" aria-label="Driving controls">
-        {(['left', 'right', 'down', 'up'] as (keyof Controls)[]).map((key) => (
-          <button
-            key={key}
-            aria-label={
-              {
-                left: 'Steer left',
-                right: 'Steer right',
-                up: 'Accelerate',
-                down: 'Brake or reverse',
-              }[key]
-            }
-            onPointerDown={(e) => {
-              e.currentTarget.setPointerCapture(e.pointerId);
-              input.current[key] = true;
-            }}
-            onPointerUp={() => {
-              input.current[key] = false;
-            }}
-            onPointerCancel={() => {
-              input.current[key] = false;
-            }}
-          >
-            {{ left: '←', right: '→', down: '↓', up: '↑' }[key]}
-          </button>
-        ))}
-      </div>
+      {!spectating && (
+        <div className="touch-controls" aria-label="Driving controls">
+          {(['left', 'right', 'down', 'up'] as (keyof Controls)[]).map((key) => (
+            <button
+              key={key}
+              aria-label={
+                {
+                  left: 'Steer left',
+                  right: 'Steer right',
+                  up: 'Accelerate',
+                  down: 'Brake or reverse',
+                }[key]
+              }
+              onPointerDown={(e) => {
+                e.currentTarget.setPointerCapture(e.pointerId);
+                input.current[key] = true;
+              }}
+              onPointerUp={() => {
+                input.current[key] = false;
+              }}
+              onPointerCancel={() => {
+                input.current[key] = false;
+              }}
+            >
+              {{ left: '←', right: '→', down: '↓', up: '↑' }[key]}
+            </button>
+          ))}
+        </div>
+      )}
       <footer>
         <span>{notice}</span>
         <span>
           {status} · {drivers.filter((p) => p.connected).length}/8 drivers · {rtt || '—'} ms RTT
+          {spectators > 0 && ' · ' + spectators + ' watching'}
         </span>
       </footer>
       <section className="race-details">
-        <details>
+        <details open={spectating || undefined}>
           <summary>Drivers & lap times</summary>
           <table aria-label="Drivers">
             <thead>
@@ -474,7 +526,11 @@ export default function App() {
               <br />
               Last reconciliation: {metrics.correction.toFixed(1)} px
               <br />
-              {me && onRoad(me.x, me.y) ? 'On track' : 'Grass reduces grip and speed'}
+              {spectating
+                ? 'Receiving live race snapshots'
+                : me && onRoad(me.x, me.y)
+                  ? 'On track'
+                  : 'Grass reduces grip and speed'}
               <br />
               Delay is simulated in this client; measured RTT includes it.
             </p>

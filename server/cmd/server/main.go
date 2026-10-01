@@ -41,8 +41,9 @@ type connection struct {
 	send chan []byte
 }
 type race struct {
-	players map[string]*player
-	tick    int64
+	players    map[string]*player
+	spectators map[*connection]bool
+	tick       int64
 }
 type game struct {
 	sync.Mutex
@@ -95,12 +96,18 @@ func (g *game) run() {
 				}
 				states = append(states, p.State)
 			}
-			if len(states) == 0 {
+			if len(states) == 0 && len(r.spectators) == 0 {
 				delete(g.rooms, roomID)
 				continue
 			}
 			sort.Slice(states, func(i, j int) bool { return states[i].ID < states[j].ID })
-			data, _ := json.Marshal(map[string]any{"type": "snapshot", "tick": r.tick, "players": states})
+			data, _ := json.Marshal(map[string]any{"type": "snapshot", "tick": r.tick, "players": states, "spectators": len(r.spectators)})
+			for spectator := range r.spectators {
+				select {
+				case spectator.send <- data:
+				default:
+				}
+			}
 			for _, p := range r.players {
 				if p.peer != nil {
 					select {
@@ -148,43 +155,55 @@ func (g *game) connect(w http.ResponseWriter, req *http.Request) {
 			g.Unlock()
 			return
 		}
-		r = &race{players: map[string]*player{}}
+		r = &race{players: map[string]*player{}, spectators: map[*connection]bool{}}
 		g.rooms[name] = r
 	}
 	var p *player
-	token := req.URL.Query().Get("token")
-	for _, candidate := range r.players {
-		if candidate.token == token && token != "" {
-			p = candidate
-			break
-		}
-	}
-	if p == nil {
-		if len(r.players) >= 8 {
+	var welcome []byte
+	if req.URL.Query().Get("spectate") == "1" {
+		if len(r.spectators) >= 16 {
 			g.Unlock()
-			_ = ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(1008, "Room is full (8 drivers)."), time.Now().Add(time.Second))
+			_ = ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(1008, "Spectator seats are full (16)."), time.Now().Add(time.Second))
 			return
 		}
-		p = &player{State: State{Car: Car{X: 590 - float64(len(r.players))*25, Y: 690}, ID: identifier(4), Name: display}, token: identifier(16), lapStart: r.tick}
-		r.players[p.ID] = p
+		r.spectators[c] = true
+		welcome, _ = json.Marshal(map[string]any{"type": "welcome", "role": "spectator", "hz": 30})
+	} else {
+		token := req.URL.Query().Get("token")
+		for _, candidate := range r.players {
+			if candidate.token == token && token != "" {
+				p = candidate
+				break
+			}
+		}
+		if p == nil {
+			if len(r.players) >= 8 {
+				g.Unlock()
+				_ = ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(1008, "Room is full (8 drivers)."), time.Now().Add(time.Second))
+				return
+			}
+			p = &player{State: State{Car: Car{X: 590 - float64(len(r.players))*25, Y: 690}, ID: identifier(4), Name: display}, token: identifier(16), lapStart: r.tick}
+			r.players[p.ID] = p
+		}
+		if p.peer != nil {
+			p.peer.ws.Close()
+		}
+		p.peer = c
+		p.Connected = true
+		p.seen = time.Now()
+		p.Name = display
+		welcome, _ = json.Marshal(map[string]any{"type": "welcome", "role": "driver", "id": p.ID, "token": p.token, "seq": p.Seq, "hz": 30})
 	}
-	if p.peer != nil {
-		p.peer.ws.Close()
-	}
-	p.peer = c
-	p.Connected = true
-	p.seen = time.Now()
-	p.Name = display
-	welcome, _ := json.Marshal(map[string]any{"type": "welcome", "id": p.ID, "token": p.token, "seq": p.Seq, "hz": 30})
 	g.Unlock()
 	_ = ws.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	if ws.WriteMessage(websocket.TextMessage, welcome) != nil {
 		g.Lock()
-		if p.peer == c {
+		if p != nil && p.peer == c {
 			p.peer = nil
 			p.Connected = false
 			p.seen = time.Now()
 		}
+		delete(r.spectators, c)
 		g.Unlock()
 		return
 	}
@@ -192,12 +211,13 @@ func (g *game) connect(w http.ResponseWriter, req *http.Request) {
 	defer close(done)
 	defer func() {
 		g.Lock()
-		if p.peer == c {
+		if p != nil && p.peer == c {
 			p.peer = nil
 			p.Connected = false
 			p.seen = time.Now()
 			p.input = Controls{}
 		}
+		delete(r.spectators, c)
 		g.Unlock()
 	}()
 	go func() {
@@ -233,13 +253,13 @@ func (g *game) connect(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		g.Lock()
-		if p.peer != c {
+		if p != nil && p.peer != c {
 			g.Unlock()
 			return
 		}
 		switch msg.Type {
 		case "input":
-			if msg.Seq > p.Seq && msg.Seq-p.Seq < 10000 {
+			if p != nil && msg.Seq > p.Seq && msg.Seq-p.Seq < 10000 {
 				p.Seq = msg.Seq
 				p.input = msg.Controls
 				p.lastInput = time.Now()
@@ -251,6 +271,9 @@ func (g *game) connect(w http.ResponseWriter, req *http.Request) {
 			default:
 			}
 		case "reset":
+			if p == nil {
+				break
+			}
 			p.Car = Car{X: 590, Y: 690}
 			p.input = Controls{}
 			p.Checkpoint = 0
@@ -270,7 +293,7 @@ func main() {
 	mux.HandleFunc("/ws", g.connect)
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status":"ok","tickRate":30,"maxPlayers":8}`))
+		w.Write([]byte(`{"status":"ok","tickRate":30,"maxPlayers":8,"maxSpectators":16}`))
 	})
 	mux.Handle("/", http.FileServer(http.Dir(*web)))
 	log.Printf("Circuit beta: http://%s", *addr)

@@ -54,3 +54,7 @@ One track with ghost cars: there are no car-to-car collisions, matchmaking, acco
 ## License
 
 [MIT](LICENSE). Dependency licenses remain their own; see [third-party notices](THIRD_PARTY_NOTICES.md).
+
+### Spectator mode
+
+Open Room settings, choose Spectator, and join. Spectators receive live interpolated cars and lap standings without allocating a driver seat. Copy spectator link shares that view (room URL with watch=1 in its fragment). Each room permits up to 16 spectators separately from its eight drivers; this is a configured limit, not a new capacity benchmark. Spectator input/reset messages are ignored by the server. Switching back to Driver uses an available seat or reclaims this tab's reconnect token; leaving a driver seat still keeps its existing 60-second reconnect grace period.
